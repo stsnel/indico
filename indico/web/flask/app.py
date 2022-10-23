@@ -5,11 +5,12 @@
 # modify it under the terms of the MIT License; see the
 # LICENSE file for more details.
 
+import json
 import os
 import uuid
 
 from babel.numbers import format_currency, get_currency_name
-from flask import _app_ctx_stack, render_template, request
+from flask import _app_ctx_stack, render_template, request, g
 from flask.helpers import get_root_path
 from flask_pluginengine import current_plugin, plugins_loaded
 from markupsafe import Markup
@@ -22,6 +23,9 @@ from werkzeug.local import LocalProxy
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.urls import url_parse
 from wtforms.widgets import html_params
+
+from coverage import Coverage
+from string_extractor import StringExtractor
 
 import indico
 from indico.core import signals
@@ -319,9 +323,12 @@ def extend_url_map(app):
 
 
 def add_handlers(app):
+    setup_testar_routes(app)
+    app.before_request(testar_before_request)
     app.before_request(canonicalize_url)
     app.before_request(reject_nuls)
     app.after_request(inject_current_url)
+    app.after_request(testar_after_request)
     app.register_blueprint(errors_bp)
 
 
@@ -430,3 +437,61 @@ def make_app(testing=False, config_override=None):
         check_db()
 
     return app
+
+
+def setup_testar_routes(app):
+    @app.route('/testar-covcontext/<context>')
+    def set_testar_covcontext(context = "" ):
+        g.cov.switch_context(context)
+        return "Coverage context switched."
+
+    @app.route('/testar-logcontext/<context>')
+    def set_testar_logcontext(context = "" ):
+        g.cov.switch_log_context(context)
+        return "Log context switched."
+
+    @app.route("/testar-extractstrings/<context>")
+    def extract_strings(context = ""):
+        g.cov.stop()
+        extractor = StringExtractor(True, "/coverage/stringextractor_cache.dat")
+        lines = g.cov.export_execution_path(context)
+        strings = extractor.get_batch(lines, True)
+        extractor.save()
+        result = json.dumps(strings)
+        g.cov.start()
+        return(result)
+
+    @app.route("/testar-clearlog-exportdata")
+    def testar_clearlog_exportdata():
+        g.cov.clear_log_data()
+        return app.response_class(
+            response=g.cov.export_data(),
+            status=200,
+            mimetype='text/plain'
+        )
+
+    @app.route("/testar-exportdata")
+    def testar_exportdata():
+        return app.response_class(
+            response=g.cov.export_data(),
+            status=200,
+            mimetype='text/plain'
+        )
+
+    @app.route("/testar-importdata", methods = ['POST'])
+    def testar_importdata():
+        dumpdata = request.get_data().decode('utf-8')
+        g.cov.import_data(dumpdata)
+        return "Data imported."
+
+
+def testar_before_request():
+    g.cov = Coverage(data_file="/coverage/coverage.dat", cover_pylib=True)
+    # Need to start before load in order to preserve contexts across requests
+    g.cov.start()
+    g.cov.load(init=False)
+
+
+def testar_after_request(response):
+    g.cov.stop()
+    g.cov.save()
