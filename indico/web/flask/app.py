@@ -496,7 +496,7 @@ def setup_testar_routes(app):
         user.email = "tester@example.org"
         user.is_admin = True
 
-        identity = Identity(provider='indico', identifier="tester", password="tester")
+        identity = Identity(provider='indico', identifier="tester", password="TestarTestar123.")
         user.identities.add(identity)
 
         coredb.session.add(user)
