@@ -505,6 +505,7 @@ def setup_testar_routes(app):
         user.settings.set('timezone', config.DEFAULT_TIMEZONE)
         user.settings.set('lang', session.lang or config.DEFAULT_LOCALE)
         coredb.session.commit()
+        return "Tester user bootstrapped."
 
 
 def testar_before_request():
