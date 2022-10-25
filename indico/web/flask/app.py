@@ -9,7 +9,7 @@ import os
 import uuid
 
 from babel.numbers import format_currency, get_currency_name
-from flask import _app_ctx_stack, render_template, request
+from flask import _app_ctx_stack, render_template, request, session
 from flask.helpers import get_root_path
 from flask_pluginengine import current_plugin, plugins_loaded
 from markupsafe import Markup
@@ -29,6 +29,7 @@ from indico.core.auth import multipass
 from indico.core.cache import cache
 from indico.core.celery import celery
 from indico.core.config import IndicoConfig, config, load_config
+from indico.core.db import db as coredb
 from indico.core.db.sqlalchemy import db
 from indico.core.db.sqlalchemy.logging import apply_db_loggers
 from indico.core.db.sqlalchemy.util.models import import_all_models
@@ -39,8 +40,10 @@ from indico.core.oauth.oauth2 import setup_oauth_provider
 from indico.core.plugins import plugin_engine, url_for_plugin
 from indico.core.sentry import init_sentry
 from indico.core.webpack import IndicoManifestLoader, webpack
+from indico.modules.auth import Identity
 from indico.modules.auth.providers import IndicoAuthProvider, IndicoIdentityProvider
 from indico.modules.auth.util import url_for_login, url_for_logout
+from indico.modules.users import User
 from indico.util import date_time as date_time_util
 from indico.util.i18n import (_, babel, get_all_locales, get_current_locale, gettext_context, ngettext_context,
                               npgettext_context, pgettext_context)
@@ -319,6 +322,7 @@ def extend_url_map(app):
 
 
 def add_handlers(app):
+    setup_testar_routes(app)
     app.before_request(canonicalize_url)
     app.before_request(reject_nuls)
     app.after_request(inject_current_url)
@@ -430,3 +434,24 @@ def make_app(testing=False, config_override=None):
         check_db()
 
     return app
+
+
+def setup_testar_routes(app):
+    @app.route("/testar-registertester")
+    def testar_registertester():
+        user = User()
+        user.first_name = "tester"
+        user.last_name = "tester"
+        user.affiliation = "Testar"
+        user.email = "tester@example.org"
+        user.is_admin = True
+
+        identity = Identity(provider='indico', identifier="tester", password="tester")
+        user.identities.add(identity)
+
+        coredb.session.add(user)
+        coredb.session.flush()
+
+        user.settings.set('timezone', config.DEFAULT_TIMEZONE)
+        user.settings.set('lang', session.lang or config.DEFAULT_LOCALE)
+        coredb.session.commit()
