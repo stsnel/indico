@@ -517,3 +517,4 @@ def testar_before_request():
 def testar_after_request(response):
     g.cov.stop()
     g.cov.save()
+    return response
